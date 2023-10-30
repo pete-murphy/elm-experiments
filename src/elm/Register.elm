@@ -8,7 +8,7 @@ module Register exposing
 
 import Accessibility as Html exposing (Html)
 import Accessibility.Aria as Aria
-import Api exposing (DeviceId, SessionId, UserId)
+import Api
 import Date exposing (Date)
 import Email
 import Html.Attributes as Attributes
@@ -16,8 +16,6 @@ import Html.Events as Events
 import Iso8601
 import Json.Encode as Encode
 import Maybe.Extra as Maybe
-import Regex
-import Time
 
 
 
@@ -26,6 +24,11 @@ import Time
 
 type Model
     = Model InternalModel
+
+
+type DateInputValue
+    = Incomplete String
+    | Complete Date
 
 
 type alias InternalModel =
@@ -39,7 +42,7 @@ type alias UnvalidatedForm =
     { firstName : String
     , lastName : String
     , email : String
-    , birthday : Maybe Date
+    , birthday : DateInputValue
     , phoneNumber : String
     , username : String
     , password : String
@@ -71,7 +74,7 @@ init flags =
             { firstName = ""
             , lastName = ""
             , email = ""
-            , birthday = Nothing
+            , birthday = Incomplete ""
             , phoneNumber = ""
             , username = ""
             , password = ""
@@ -133,6 +136,21 @@ view (Model model) =
             else
                 Nothing
 
+        birthdayErrorId =
+            "birthday-error"
+
+        birthdayInvalid =
+            if not model.dirty then
+                Nothing
+
+            else if model.unvalidatedForm.birthday == Incomplete "" then
+                Just "This field is required"
+                -- else if Maybe.isNothing (Email.fromString model.unvalidatedForm.email) then
+                --     Just "Must be a valid e-mail"
+
+            else
+                Nothing
+
         encodedFlags =
             Encode.encode 4
                 (Encode.object
@@ -172,7 +190,7 @@ view (Model model) =
                             |> List.map (\error -> Html.span [ Attributes.id firstNameErrorId ] [ Html.text error ])
                         )
                     ]
-                , Html.div []
+                , Html.div [ Attributes.class "flex flex-col w-fit gap-1" ]
                     [ Html.labelBefore []
                         (Html.div
                             []
@@ -196,7 +214,7 @@ view (Model model) =
                             |> List.map (\error -> Html.span [ Attributes.id lastNameErrorId ] [ Html.text error ])
                         )
                     ]
-                , Html.div []
+                , Html.div [ Attributes.class "flex flex-col w-fit gap-1" ]
                     [ Html.labelBefore []
                         (Html.div
                             []
@@ -221,6 +239,51 @@ view (Model model) =
                             |> List.map (\error -> Html.span [ Attributes.id emailErrorId ] [ Html.text error ])
                         )
                     ]
+                , Html.div [ Attributes.class "flex flex-col w-fit gap-1" ]
+                    [ Html.labelBefore []
+                        (Html.div
+                            []
+                            [ Html.text "Date of birth", Html.span [ Aria.hidden True ] [ Html.text "*" ] ]
+                        )
+                        (Html.inputText
+                            (case model.unvalidatedForm.birthday of
+                                Incomplete str ->
+                                    str
+
+                                Complete date ->
+                                    Date.toIsoString date
+                            )
+                            [ Attributes.attribute "autocomplete" "bday"
+                            , Attributes.type_ "date"
+                            , Aria.required True
+                            , Aria.invalid (Maybe.isJust birthdayInvalid)
+                            , Aria.describedBy (Maybe.toList birthdayInvalid |> List.map (\_ -> birthdayErrorId))
+                            , Events.onInput
+                                (\str ->
+                                    EnteredBirthday
+                                        (case Date.fromIsoString str of
+                                            Ok date ->
+                                                Complete date
+
+                                            Err _ ->
+                                                Incomplete str
+                                        )
+                                )
+
+                            --(Date.fromIsoString >> Result.toMaybe)
+                            , Attributes.class "rounded-md focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 transition-all"
+                            , Attributes.classList [ ( "border-red-500", Maybe.isJust birthdayInvalid ) ]
+                            ]
+                        )
+                    , Html.div
+                        [ Attributes.class "text-xs"
+                        , Attributes.classList [ ( "text-red-500", Maybe.isJust birthdayInvalid ) ]
+                        ]
+                        (Maybe.toList (Maybe.or birthdayInvalid (Just "\u{00A0}"))
+                            |> List.map (\error -> Html.span [ Attributes.id birthdayErrorId ] [ Html.text error ])
+                        )
+                    ]
+                , Html.pre [] [ Html.text (Debug.toString model.unvalidatedForm.birthday) ]
                 , Html.div []
                     [ Html.pre [] [ Html.text encodedFlags ]
                     ]
@@ -239,7 +302,7 @@ type Msg
     | EnteredFirstName String
     | EnteredLastName String
     | EnteredEmail String
-    | EnteredBirthday (Maybe Date)
+    | EnteredBirthday DateInputValue
     | EnteredPhoneNumber String
     | EnteredUsername String
     | EnteredPassword String
