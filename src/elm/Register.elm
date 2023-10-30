@@ -26,11 +26,6 @@ type Model
     = Model InternalModel
 
 
-type DateInputValue
-    = Incomplete String
-    | Complete Date
-
-
 type alias InternalModel =
     { unvalidatedForm : UnvalidatedForm
     , dirty : Bool
@@ -42,7 +37,7 @@ type alias UnvalidatedForm =
     { firstName : String
     , lastName : String
     , email : String
-    , birthday : DateInputValue
+    , birthday : Maybe Date
     , phoneNumber : String
     , username : String
     , password : String
@@ -74,7 +69,7 @@ init flags =
             { firstName = ""
             , lastName = ""
             , email = ""
-            , birthday = Incomplete ""
+            , birthday = Nothing
             , phoneNumber = ""
             , username = ""
             , password = ""
@@ -143,7 +138,7 @@ view (Model model) =
             if not model.dirty then
                 Nothing
 
-            else if model.unvalidatedForm.birthday == Incomplete "" then
+            else if model.unvalidatedForm.birthday == Nothing then
                 Just "This field is required"
                 -- else if Maybe.isNothing (Email.fromString model.unvalidatedForm.email) then
                 --     Just "Must be a valid e-mail"
@@ -247,10 +242,10 @@ view (Model model) =
                         )
                         (Html.inputText
                             (case model.unvalidatedForm.birthday of
-                                Incomplete str ->
-                                    str
+                                Nothing ->
+                                    ""
 
-                                Complete date ->
+                                Just date ->
                                     Date.toIsoString date
                             )
                             [ Attributes.attribute "autocomplete" "bday"
@@ -258,19 +253,7 @@ view (Model model) =
                             , Aria.required True
                             , Aria.invalid (Maybe.isJust birthdayInvalid)
                             , Aria.describedBy (Maybe.toList birthdayInvalid |> List.map (\_ -> birthdayErrorId))
-                            , Events.onInput
-                                (\str ->
-                                    EnteredBirthday
-                                        (case Date.fromIsoString str of
-                                            Ok date ->
-                                                Complete date
-
-                                            Err _ ->
-                                                Incomplete str
-                                        )
-                                )
-
-                            --(Date.fromIsoString >> Result.toMaybe)
+                            , Events.onInput (Date.fromIsoString >> Result.toMaybe >> EnteredBirthday)
                             , Attributes.class "rounded-md focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 transition-all"
                             , Attributes.classList [ ( "border-red-500", Maybe.isJust birthdayInvalid ) ]
                             ]
@@ -302,7 +285,7 @@ type Msg
     | EnteredFirstName String
     | EnteredLastName String
     | EnteredEmail String
-    | EnteredBirthday DateInputValue
+    | EnteredBirthday (Maybe Date)
     | EnteredPhoneNumber String
     | EnteredUsername String
     | EnteredPassword String
