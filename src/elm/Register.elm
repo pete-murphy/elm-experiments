@@ -10,9 +10,13 @@ import Accessibility as Html exposing (Html)
 import Accessibility.Aria as Aria
 import Api exposing (DeviceId, SessionId, UserId)
 import Date exposing (Date)
+import Email
 import Html.Attributes as Attributes
 import Html.Events as Events
+import Iso8601
+import Json.Encode as Encode
 import Maybe.Extra as Maybe
+import Regex
 import Time
 
 
@@ -27,6 +31,7 @@ type Model
 type alias InternalModel =
     { unvalidatedForm : UnvalidatedForm
     , dirty : Bool
+    , flags : Api.Flags
     }
 
 
@@ -54,13 +59,13 @@ type alias ValidatedForm =
 
 
 init :
-    { deviceId : DeviceId
-    , sessionId : SessionId
-    , userId : UserId
-    , now : Time.Posix
-    }
+    Api.Flags
     -> ( Model, Cmd Msg )
-init _ =
+init flags =
+    let
+        _ =
+            Debug.log "flags" flags
+    in
     ( Model
         { unvalidatedForm =
             { firstName = ""
@@ -73,6 +78,7 @@ init _ =
             , confirmPassword = ""
             }
         , dirty = False
+        , flags = flags
         }
     , Cmd.none
     )
@@ -83,43 +89,141 @@ init _ =
 
 
 view : Model -> { title : String, body : List (Html Msg) }
-view (Model { unvalidatedForm }) =
+view (Model model) =
     let
         firstNameErrorId =
             "first-name-error"
 
         firstNameInvalid =
-            if String.trim unvalidatedForm.firstName == "" then
+            if not model.dirty then
+                Nothing
+
+            else if String.trim model.unvalidatedForm.firstName == "" then
                 Just "Must not be blank"
 
             else
                 Nothing
+
+        lastNameErrorId =
+            "last-name-error"
+
+        lastNameInvalid =
+            if not model.dirty then
+                Nothing
+
+            else if String.trim model.unvalidatedForm.lastName == "" then
+                Just "Must not be blank"
+
+            else
+                Nothing
+
+        emailErrorId =
+            "email-error"
+
+        emailInvalid =
+            if not model.dirty then
+                Nothing
+
+            else if String.trim model.unvalidatedForm.email == "" then
+                Just "Must not be blank"
+
+            else if Maybe.isNothing (Email.fromString model.unvalidatedForm.email) then
+                Just "Must be a valid e-mail"
+
+            else
+                Nothing
+
+        encodedFlags =
+            Encode.encode 4
+                (Encode.object
+                    [ ( "deviceId", Encode.string model.flags.deviceId )
+                    , ( "sessionId", Encode.string model.flags.sessionId )
+                    , ( "userId", Encode.string model.flags.userId )
+                    , ( "now", Iso8601.encode model.flags.now )
+                    ]
+                )
     in
     { title = "Register"
     , body =
         [ Html.div []
             [ Html.form
-                [ Attributes.class "p-1"
-                ]
-                [ Html.labelBefore []
-                    (Html.div
-                        []
-                        [ Html.text "First name", Html.sup [ Aria.hidden True ] [ Html.text "✱" ] ]
-                    )
-                    (Html.inputText unvalidatedForm.firstName
-                        [ Attributes.attribute "autocomplete" "given-name"
-                        , Aria.required True
-                        , Aria.invalid (Maybe.isJust firstNameInvalid)
-                        , Aria.describedBy (Maybe.toList firstNameInvalid |> List.map (\_ -> firstNameErrorId))
-                        , Events.onInput EnteredFirstName
-                        , Attributes.class "rounded-md"
-                        , Attributes.classList [ ( "border-red-500", Maybe.isJust firstNameInvalid ) ]
+                [ Attributes.class "flex flex-col gap-1" ]
+                [ Html.div [ Attributes.class "flex flex-col w-fit gap-1" ]
+                    [ Html.labelBefore []
+                        (Html.div
+                            []
+                            [ Html.text "First name", Html.span [ Aria.hidden True ] [ Html.text "*" ] ]
+                        )
+                        (Html.inputText model.unvalidatedForm.firstName
+                            [ Attributes.attribute "autocomplete" "given-name"
+                            , Aria.required True
+                            , Aria.invalid (Maybe.isJust firstNameInvalid)
+                            , Aria.describedBy (Maybe.toList firstNameInvalid |> List.map (\_ -> firstNameErrorId))
+                            , Events.onInput EnteredFirstName
+                            , Attributes.class "rounded-md focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 transition-all"
+                            , Attributes.classList [ ( "border-red-500", Maybe.isJust firstNameInvalid ) ]
+                            ]
+                        )
+                    , Html.div
+                        [ Attributes.class "text-xs"
+                        , Attributes.classList [ ( "text-red-500", Maybe.isJust firstNameInvalid ) ]
                         ]
-                    )
-                , Html.div
-                    [ Attributes.classList [ ( "text-red-500", Maybe.isJust firstNameInvalid ) ] ]
-                    -- [ Html.span [ Attributes.id firstNameErrorId ] [ "Must not be blank" ] ]
-                    (Maybe.toList firstNameInvalid |> List.map (\error -> Html.span [ Attributes.id firstNameErrorId ] [ Html.text error ]))
+                        (Maybe.toList (Maybe.or firstNameInvalid (Just "\u{00A0}"))
+                            |> List.map (\error -> Html.span [ Attributes.id firstNameErrorId ] [ Html.text error ])
+                        )
+                    ]
+                , Html.div []
+                    [ Html.labelBefore []
+                        (Html.div
+                            []
+                            [ Html.text "Last name", Html.span [ Aria.hidden True ] [ Html.text "*" ] ]
+                        )
+                        (Html.inputText model.unvalidatedForm.lastName
+                            [ Attributes.attribute "autocomplete" "family-name"
+                            , Aria.required True
+                            , Aria.invalid (Maybe.isJust lastNameInvalid)
+                            , Aria.describedBy (Maybe.toList lastNameInvalid |> List.map (\_ -> lastNameErrorId))
+                            , Events.onInput EnteredLastName
+                            , Attributes.class "rounded-md focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 transition-all"
+                            , Attributes.classList [ ( "border-red-500", Maybe.isJust lastNameInvalid ) ]
+                            ]
+                        )
+                    , Html.div
+                        [ Attributes.class "text-xs"
+                        , Attributes.classList [ ( "text-red-500", Maybe.isJust lastNameInvalid ) ]
+                        ]
+                        (Maybe.toList (Maybe.or lastNameInvalid (Just "\u{00A0}"))
+                            |> List.map (\error -> Html.span [ Attributes.id lastNameErrorId ] [ Html.text error ])
+                        )
+                    ]
+                , Html.div []
+                    [ Html.labelBefore []
+                        (Html.div
+                            []
+                            [ Html.text "E-mail", Html.span [ Aria.hidden True ] [ Html.text "*" ] ]
+                        )
+                        (Html.inputText model.unvalidatedForm.email
+                            [ Attributes.attribute "autocomplete" "email"
+                            , Attributes.type_ "email"
+                            , Aria.required True
+                            , Aria.invalid (Maybe.isJust emailInvalid)
+                            , Aria.describedBy (Maybe.toList emailInvalid |> List.map (\_ -> emailErrorId))
+                            , Events.onInput EnteredEmail
+                            , Attributes.class "rounded-md focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 transition-all"
+                            , Attributes.classList [ ( "border-red-500", Maybe.isJust emailInvalid ) ]
+                            ]
+                        )
+                    , Html.div
+                        [ Attributes.class "text-xs"
+                        , Attributes.classList [ ( "text-red-500", Maybe.isJust emailInvalid ) ]
+                        ]
+                        (Maybe.toList (Maybe.or emailInvalid (Just "\u{00A0}"))
+                            |> List.map (\error -> Html.span [ Attributes.id emailErrorId ] [ Html.text error ])
+                        )
+                    ]
+                , Html.div []
+                    [ Html.pre [] [ Html.text encodedFlags ]
+                    ]
                 ]
             ]
         ]

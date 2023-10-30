@@ -19,7 +19,7 @@ type Problems
 
 
 type Model
-    = Initial Api.Flags
+    = Initial Api.PartialFlags
     | DecodeError Decode.Error
     | Register Register.Model
 
@@ -29,7 +29,7 @@ type Model
 
 
 init :
-    Result Decode.Error Api.Flags
+    Result Decode.Error Api.PartialFlags
     -> Url
     -> Nav.Key
     -> ( Model, Cmd Msg )
@@ -40,6 +40,9 @@ init result _ _ =
 
         Ok flags ->
             let
+                _ =
+                    Debug.log "flags" flags
+
                 getDeviceId : Cmd Msg
                 getDeviceId =
                     case flags.deviceId of
@@ -60,7 +63,7 @@ init result _ _ =
 
                 getUserId : Cmd Msg
                 getUserId =
-                    case flags.sessionId of
+                    case flags.userId of
                         Nothing ->
                             Random.generate GotUserId (Random.constant "generated-user-id")
 
@@ -172,24 +175,24 @@ update msg model =
             ( model, Cmd.none )
 
 
-updateInitial : (Api.Flags -> Api.Flags) -> Model -> Model
+updateInitial : (Api.PartialFlags -> Api.PartialFlags) -> Model -> Model
 updateInitial transform model =
     case model of
-        Initial flags ->
+        Initial partialFlags ->
             let
-                flags_ =
-                    transform flags
+                { deviceId, sessionId, userId, now } =
+                    transform partialFlags
             in
-            case ( flags_.deviceId, flags_.sessionId, ( flags_.userId, flags_.now ) ) of
-                ( Just deviceId, Just sessionId, ( Just userId, Just now ) ) ->
+            case Maybe.map4 Api.Flags deviceId sessionId userId now of
+                Just flags ->
                     let
                         ( m, _ ) =
-                            Register.init { deviceId = deviceId, sessionId = sessionId, userId = userId, now = now }
+                            Register.init flags
                     in
                     Register m
 
                 _ ->
-                    Initial flags_
+                    Initial (Api.PartialFlags deviceId sessionId userId now)
 
         _ ->
             model
@@ -211,9 +214,9 @@ subscriptions _ =
 main : Program Decode.Value Model Msg
 main =
     let
-        decoderFlags : Decoder Api.Flags
+        decoderFlags : Decoder Api.PartialFlags
         decoderFlags =
-            Decode.succeed Api.Flags
+            Decode.succeed Api.PartialFlags
                 |> Pipeline.optional "deviceId" (Decode.nullable Decode.string) Nothing
                 |> Pipeline.optional "sessionId" (Decode.nullable Decode.string) Nothing
                 |> Pipeline.optional "userId" (Decode.nullable Decode.string) Nothing

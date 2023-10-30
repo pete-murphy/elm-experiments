@@ -1,6 +1,7 @@
 module Api exposing
     ( DeviceId
     , Flags
+    , PartialFlags
     , SessionId
     , UserId
     , application
@@ -29,7 +30,7 @@ type alias SessionId =
     String
 
 
-type alias Flags =
+type alias PartialFlags =
     { deviceId : Maybe DeviceId
     , sessionId : Maybe SessionId
     , userId : Maybe UserId
@@ -37,10 +38,18 @@ type alias Flags =
     }
 
 
+type alias Flags =
+    { deviceId : DeviceId
+    , sessionId : SessionId
+    , userId : UserId
+    , now : Time.Posix
+    }
+
+
 application :
-    Decoder Flags
+    Decoder PartialFlags
     ->
-        { init : Result Decode.Error Flags -> Url -> Nav.Key -> ( model, Cmd msg )
+        { init : Result Decode.Error PartialFlags -> Url -> Nav.Key -> ( model, Cmd msg )
         , view : model -> Document msg
         , update : msg -> model -> ( model, Cmd msg )
         , subscriptions : model -> Sub msg
