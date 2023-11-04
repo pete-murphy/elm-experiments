@@ -3,15 +3,19 @@ module Main exposing (main)
 import Api
 import Browser exposing (Document)
 import Browser.Navigation as Nav
+import DeviceId exposing (DeviceId)
+import Flags exposing (Flags, PartialFlags)
 import Html
 import Html.Attributes as Attributes
 import Json.Decode as Decode exposing (Decoder, Error(..))
 import Json.Decode.Pipeline as Pipeline
+import Page.Register as Register
 import Random
-import Register
+import SessionId exposing (SessionId)
 import Task
 import Time
 import Url exposing (Url)
+import UserId exposing (UserId)
 
 
 type Problems
@@ -19,7 +23,8 @@ type Problems
 
 
 type Model
-    = Initial Api.PartialFlags
+    = Initial PartialFlags
+    | NoTimeZone
     | DecodeError Decode.Error
     | Register Register.Model
 
@@ -29,7 +34,7 @@ type Model
 
 
 init :
-    Result Decode.Error Api.PartialFlags
+    Result Decode.Error PartialFlags
     -> Url
     -> Nav.Key
     -> ( Model, Cmd Msg )
@@ -40,14 +45,11 @@ init result _ _ =
 
         Ok flags ->
             let
-                _ =
-                    Debug.log "flags" flags
-
                 getDeviceId : Cmd Msg
                 getDeviceId =
                     case flags.deviceId of
                         Nothing ->
-                            Random.generate GotDeviceId (Random.constant "generated-device-id")
+                            Random.generate GotDeviceId DeviceId.generator
 
                         Just _ ->
                             Cmd.none
@@ -56,7 +58,7 @@ init result _ _ =
                 getSessionId =
                     case flags.sessionId of
                         Nothing ->
-                            Random.generate GotSessionId (Random.constant "generated-session-id")
+                            Random.generate GotSessionId SessionId.generator
 
                         Just _ ->
                             Cmd.none
@@ -65,7 +67,7 @@ init result _ _ =
                 getUserId =
                     case flags.userId of
                         Nothing ->
-                            Random.generate GotUserId (Random.constant "generated-user-id")
+                            Random.generate GotUserId UserId.generator
 
                         Just _ ->
                             Cmd.none
@@ -74,8 +76,17 @@ init result _ _ =
                 getNow =
                     case flags.now of
                         Nothing ->
-                            -- Random.generate GotNow (Random.float 0 1700000000000 |> Random.map (floor >> Time.millisToPosix))
                             Time.now |> Task.perform GotNow
+
+                        Just _ ->
+                            Cmd.none
+
+                getTimeZone : Cmd Msg
+                getTimeZone =
+                    case flags.now of
+                        Nothing ->
+                            Time.here
+                                |> Task.attempt (Result.toMaybe >> GotTimeZone)
 
                         Just _ ->
                             Cmd.none
@@ -86,6 +97,7 @@ init result _ _ =
                 , getSessionId
                 , getUserId
                 , getNow
+                , getTimeZone
                 ]
             )
 
@@ -106,6 +118,13 @@ view model =
                         , Html.pre []
                             [ Html.text (Debug.toString flags)
                             ]
+                        ]
+                    }
+
+                NoTimeZone ->
+                    { title = "NoTimeZone"
+                    , body =
+                        [ Html.h1 [ Attributes.class "text-red-500" ] [ Html.text "NoTimeZone" ]
                         ]
                     }
 
@@ -143,10 +162,11 @@ type Msg
     = ChangedUrl Url
     | ClickedLink Browser.UrlRequest
     | GotRegisterMsg Register.Msg
-    | GotDeviceId Api.DeviceId
-    | GotSessionId Api.SessionId
-    | GotUserId Api.UserId
+    | GotDeviceId DeviceId
+    | GotSessionId SessionId
+    | GotUserId UserId
     | GotNow Time.Posix
+    | GotTimeZone (Maybe Time.Zone)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -160,42 +180,48 @@ update msg model =
             ( Register newSubModel, Cmd.map GotRegisterMsg cmd )
 
         ( GotDeviceId id, _ ) ->
-            ( updateInitial (\flags -> { flags | deviceId = Just id }) model, Cmd.none )
+            updateInitial (\flags -> { flags | deviceId = Just id }) model
 
         ( GotSessionId id, _ ) ->
-            ( updateInitial (\flags -> { flags | sessionId = Just id }) model, Cmd.none )
+            updateInitial (\flags -> { flags | sessionId = Just id }) model
 
         ( GotUserId id, _ ) ->
-            ( updateInitial (\flags -> { flags | userId = Just id }) model, Cmd.none )
+            updateInitial (\flags -> { flags | userId = Just id }) model
 
         ( GotNow now, _ ) ->
-            ( updateInitial (\flags -> { flags | now = Just now }) model, Cmd.none )
+            updateInitial (\flags -> { flags | now = Just now }) model
+
+        ( GotTimeZone (Just timeZone), _ ) ->
+            updateInitial (\flags -> { flags | timeZone = Just timeZone }) model
+
+        ( GotTimeZone Nothing, _ ) ->
+            ( NoTimeZone, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
 
 
-updateInitial : (Api.PartialFlags -> Api.PartialFlags) -> Model -> Model
+updateInitial : (PartialFlags -> PartialFlags) -> Model -> ( Model, Cmd Msg )
 updateInitial transform model =
     case model of
         Initial partialFlags ->
             let
-                { deviceId, sessionId, userId, now } =
+                { deviceId, sessionId, userId, now, timeZone } =
                     transform partialFlags
             in
-            case Maybe.map4 Api.Flags deviceId sessionId userId now of
+            case Maybe.map5 Flags deviceId sessionId userId now timeZone of
                 Just flags ->
                     let
                         ( m, _ ) =
                             Register.init flags
                     in
-                    Register m
+                    ( Register m, Cmd.none )
 
                 _ ->
-                    Initial (Api.PartialFlags deviceId sessionId userId now)
+                    ( Initial (PartialFlags deviceId sessionId userId now timeZone), Cmd.none )
 
         _ ->
-            model
+            ( model, Cmd.none )
 
 
 
@@ -214,13 +240,14 @@ subscriptions _ =
 main : Program Decode.Value Model Msg
 main =
     let
-        decoderFlags : Decoder Api.PartialFlags
+        decoderFlags : Decoder PartialFlags
         decoderFlags =
-            Decode.succeed Api.PartialFlags
-                |> Pipeline.optional "deviceId" (Decode.nullable Decode.string) Nothing
-                |> Pipeline.optional "sessionId" (Decode.nullable Decode.string) Nothing
-                |> Pipeline.optional "userId" (Decode.nullable Decode.string) Nothing
+            Decode.succeed PartialFlags
+                |> Pipeline.optional "deviceId" (Decode.nullable DeviceId.decoder) Nothing
+                |> Pipeline.optional "sessionId" (Decode.nullable SessionId.decoder) Nothing
+                |> Pipeline.optional "userId" (Decode.nullable UserId.decoder) Nothing
                 |> Pipeline.optional "now" (Decode.nullable Decode.int |> Decode.map (Maybe.map Time.millisToPosix)) Nothing
+                |> Pipeline.optional "timeZoneOffset" (Decode.nullable Decode.int |> Decode.map (Maybe.map (\offset -> Time.customZone offset []))) Nothing
     in
     Api.application
         decoderFlags

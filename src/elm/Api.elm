@@ -1,49 +1,11 @@
-module Api exposing
-    ( DeviceId
-    , Flags
-    , PartialFlags
-    , SessionId
-    , UserId
-    , application
-    )
+module Api exposing (application)
 
 import Browser exposing (Document)
 import Browser.Navigation as Nav
+import Flags exposing (PartialFlags)
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
-import Time
 import Url exposing (Url)
-
-
-type alias DeviceId =
-    -- TODO: Newtype
-    String
-
-
-type alias UserId =
-    -- TODO: Newtype
-    String
-
-
-type alias SessionId =
-    -- TODO: Newtype
-    String
-
-
-type alias PartialFlags =
-    { deviceId : Maybe DeviceId
-    , sessionId : Maybe SessionId
-    , userId : Maybe UserId
-    , now : Maybe Time.Posix
-    }
-
-
-type alias Flags =
-    { deviceId : DeviceId
-    , sessionId : SessionId
-    , userId : UserId
-    , now : Time.Posix
-    }
 
 
 application :
