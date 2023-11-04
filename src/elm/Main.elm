@@ -7,6 +7,7 @@ import DeviceId exposing (DeviceId)
 import Flags exposing (Flags, PartialFlags)
 import Html
 import Html.Attributes as Attributes
+import Iso8601
 import Json.Decode as Decode exposing (Decoder, Error(..))
 import Json.Decode.Pipeline as Pipeline
 import Page.Register as Register
@@ -246,7 +247,7 @@ main =
                 |> Pipeline.optional "deviceId" (Decode.nullable DeviceId.decoder) Nothing
                 |> Pipeline.optional "sessionId" (Decode.nullable SessionId.decoder) Nothing
                 |> Pipeline.optional "userId" (Decode.nullable UserId.decoder) Nothing
-                |> Pipeline.optional "now" (Decode.nullable Decode.int |> Decode.map (Maybe.map Time.millisToPosix)) Nothing
+                |> Pipeline.optional "now" (Decode.nullable Iso8601.decoder) Nothing
                 |> Pipeline.optional "timeZoneOffset" (Decode.nullable Decode.int |> Decode.map (Maybe.map (\offset -> Time.customZone offset []))) Nothing
     in
     Api.application

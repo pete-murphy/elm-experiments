@@ -203,8 +203,10 @@ view (Model model) =
     { title = "Register"
     , body =
         [ Html.div []
-            [ Html.form
-                [ Attributes.class "flex flex-col gap-1" ]
+            [ Html.formWithListeners
+                [ Attributes.class "flex flex-col gap-1"
+                , Events.onSubmit SubmittedForm
+                ]
                 [ inputText
                     { value = model.unvalidatedForm.firstName
                     , type_ = "text"
@@ -271,8 +273,9 @@ view (Model model) =
                         ]
                     , validator = maskValidator << validators.birthday
                     }
-
-                -- , Html.pre [] [ Html.text ( model.unvalidatedForm.birthday) ]
+                , Html.button
+                    []
+                    [ Html.text "Submit" ]
                 , Html.div []
                     [ Html.pre [] [ Html.text encodedFlags ]
                     ]
@@ -343,7 +346,7 @@ inputText args =
                 ([ Aria.invalid isInvalid
                  , Aria.describedBy (Maybe.toList maybeHintId)
                  , Events.onInput args.onInput
-                 , Attributes.class "rounded-md focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 transition-[outline-offset]"
+                 , Attributes.class "rounded-md focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 transition-[--tw-ring-offset-width] duration-200"
                  , Attributes.classList [ ( "border-red-500", isInvalid ) ]
                  ]
                     ++ (args.required |> Maybe.map Aria.required |> Maybe.toList)
@@ -375,36 +378,37 @@ type Msg
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
-update msg model =
-    case msg of
-        EnteredFirstName firstName ->
-            updateForm (\form -> { form | firstName = firstName }) model
+update msg (Model model) =
+    Tuple.mapFirst Model <|
+        case msg of
+            EnteredFirstName firstName ->
+                updateForm (\form -> { form | firstName = firstName }) model
 
-        EnteredLastName lastName ->
-            updateForm (\form -> { form | lastName = lastName }) model
+            EnteredLastName lastName ->
+                updateForm (\form -> { form | lastName = lastName }) model
 
-        EnteredEmail email ->
-            updateForm (\form -> { form | email = email }) model
+            EnteredEmail email ->
+                updateForm (\form -> { form | email = email }) model
 
-        EnteredBirthday birthday ->
-            updateForm (\form -> { form | birthday = birthday }) model
+            EnteredBirthday birthday ->
+                updateForm (\form -> { form | birthday = birthday }) model
 
-        EnteredPhoneNumber phoneNumber ->
-            updateForm (\form -> { form | phoneNumber = phoneNumber }) model
+            EnteredPhoneNumber phoneNumber ->
+                updateForm (\form -> { form | phoneNumber = phoneNumber }) model
 
-        EnteredUsername username ->
-            updateForm (\form -> { form | username = username }) model
+            EnteredUsername username ->
+                updateForm (\form -> { form | username = username }) model
 
-        EnteredPassword password ->
-            updateForm (\form -> { form | password = password }) model
+            EnteredPassword password ->
+                updateForm (\form -> { form | password = password }) model
 
-        EnteredConfirmPassword confirmPassword ->
-            updateForm (\form -> { form | confirmPassword = confirmPassword }) model
+            EnteredConfirmPassword confirmPassword ->
+                updateForm (\form -> { form | confirmPassword = confirmPassword }) model
 
-        SubmittedForm ->
-            ( model, Cmd.none )
+            SubmittedForm ->
+                ( { model | hasSubmitted = True }, Cmd.none )
 
 
-updateForm : (UnvalidatedForm -> UnvalidatedForm) -> Model -> ( Model, Cmd Msg )
-updateForm transform (Model model) =
-    ( Model { model | unvalidatedForm = transform model.unvalidatedForm, dirty = True }, Cmd.none )
+updateForm : (UnvalidatedForm -> UnvalidatedForm) -> InternalModel -> ( InternalModel, Cmd Msg )
+updateForm transform model =
+    ( { model | unvalidatedForm = transform model.unvalidatedForm, dirty = True }, Cmd.none )
