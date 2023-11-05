@@ -1,15 +1,16 @@
 module Main exposing (main)
 
+import Accessibility as Html
 import Api
 import Browser exposing (Document)
 import Browser.Navigation as Nav
 import DeviceId exposing (DeviceId)
 import Flags exposing (Flags, PartialFlags)
-import Html
 import Html.Attributes as Attributes
 import Iso8601
 import Json.Decode as Decode exposing (Decoder, Error(..))
 import Json.Decode.Pipeline as Pipeline
+import Page.Login as Login
 import Page.Register as Register
 import Random
 import SessionId exposing (SessionId)
@@ -19,19 +20,15 @@ import Url exposing (Url)
 import UserId exposing (UserId)
 
 
-type Problems
-    = Problems (List ( String, Problems ))
+
+-- MODEL
 
 
 type Model
     = Initial PartialFlags
-    | NoTimeZone
-    | DecodeError Decode.Error
+    | Error (Document Msg)
+    | Login Login.Model
     | Register Register.Model
-
-
-
--- MODEL
 
 
 init :
@@ -42,7 +39,12 @@ init :
 init result _ _ =
     case result of
         Err decodeError ->
-            ( DecodeError decodeError, Cmd.none )
+            ( Error
+                { title = "DecodeError"
+                , body = [ Html.pre [] [ Html.text (Decode.errorToString decodeError) ] ]
+                }
+            , Cmd.none
+            )
 
         Ok flags ->
             let
@@ -122,19 +124,17 @@ view model =
                         ]
                     }
 
-                NoTimeZone ->
-                    { title = "NoTimeZone"
-                    , body =
-                        [ Html.h1 [ Attributes.class "text-red-500" ] [ Html.text "NoTimeZone" ]
-                        ]
-                    }
+                Error document ->
+                    document
 
-                DecodeError decodeError ->
-                    { title = "DecodeError"
+                Login login ->
+                    let
+                        loginDocument =
+                            Login.view login
+                    in
+                    { title = loginDocument.title
                     , body =
-                        [ Html.h1 [ Attributes.class "text-red-500" ] [ Html.text "DecodeError" ]
-                        , Html.pre [] [ Html.text (Decode.errorToString decodeError) ]
-                        ]
+                        List.map (Html.map GotRegisterMsg) loginDocument.body
                     }
 
                 Register register ->
@@ -196,7 +196,7 @@ update msg model =
             updateInitial (\flags -> { flags | timeZone = Just timeZone }) model
 
         ( GotTimeZone Nothing, _ ) ->
-            ( NoTimeZone, Cmd.none )
+            ( Error { title = "No time zone", body = [ Html.h1 [] [ Html.text "No time zone" ] ] }, Cmd.none )
 
         _ ->
             ( model, Cmd.none )
