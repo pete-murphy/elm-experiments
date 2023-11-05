@@ -10,13 +10,15 @@ import Accessibility as Html exposing (Attribute, Html)
 import Accessibility.Aria as Aria
 import Date exposing (Date)
 import DeviceId
-import Email
+import Email exposing (Email)
 import Flags exposing (Flags)
 import Html.Attributes as Attributes
 import Html.Events as Events
 import Iso8601
 import Json.Encode as Encode
 import Maybe.Extra as Maybe
+import PhoneNumber exposing (PhoneNumber)
+import PhoneNumber.Countries as Countries
 import Result.Extra as Result
 import SessionId
 import UserId
@@ -43,7 +45,7 @@ type alias UnvalidatedForm =
     { firstName : String
     , lastName : String
     , email : String
-    , birthday : Maybe Date
+    , birthday : String
     , phoneNumber : String
     , username : String
     , password : String
@@ -54,9 +56,9 @@ type alias UnvalidatedForm =
 type alias Form =
     { firstName : String
     , lastName : String
-    , email : String
+    , email : Email
     , birthday : Date
-    , phoneNumber : String -- TODO: Make module
+    , phoneNumber : PhoneNumber
     , username : String
     , password : String
     }
@@ -71,7 +73,7 @@ init flags =
             { firstName = ""
             , lastName = ""
             , email = ""
-            , birthday = Nothing
+            , birthday = ""
             , phoneNumber = ""
             , username = ""
             , password = ""
@@ -93,27 +95,31 @@ type alias Validator output =
     Valid.Validator String String output
 
 
-requiredString : Validator String
-requiredString =
+requiredStringWithMessage : String -> Validator String
+requiredStringWithMessage message =
     Valid.validator
         (\value ->
             if String.trim value == "" then
-                Err "Must not be blank"
+                Err message
 
             else
                 Ok value
         )
 
 
+requiredString : Validator String
+requiredString =
+    requiredStringWithMessage "This field is required"
+
+
 type alias FormValidators =
     { firstName : Validator String
     , lastName : Validator String
-    , email : Validator String
+    , email : Validator Email
     , birthday : Validator Date
-    , phoneNumber : Validator String
+    , phoneNumber : Validator PhoneNumber
     , username : Validator String
-    , password : Validator String
-    , confirmPassword : Validator String
+    , password : String -> Validator String
     }
 
 
@@ -126,48 +132,81 @@ mkValidators (Model model) =
     , email =
         requiredString
             |> Valid.andThenValidator
-                (\email ->
-                    if Email.fromString email == Nothing then
-                        Err "Must be a valid e-mail"
+                (\str ->
+                    case Email.fromString str of
+                        Nothing ->
+                            Err "Must be a valid e-mail"
 
-                    else
-                        Ok email
+                        Just email ->
+                            Ok email
                 )
-    , username = requiredString
-    , birthday =
+    , username =
         requiredString
             |> Valid.andThenValidator
-                Date.fromIsoString
+                (\str ->
+                    if String.length str < 6 then
+                        Err "Must be at least 6 characters long"
+
+                    else
+                        Ok str
+                )
+    , birthday =
+        requiredString
+            |> Valid.andThenValidator Date.fromIsoString
             |> Valid.andThenValidator
-                (\birthday ->
+                (\date ->
                     let
                         today : Date
                         today =
                             Date.fromPosix model.flags.timeZone model.flags.now
                     in
-                    if Date.compare birthday today == GT then
+                    if Date.compare date today == GT then
                         Err "Must be in the past"
 
                     else
-                        Ok birthday
+                        Ok date
                 )
-    , phoneNumber = requiredString
-    , password = requiredString
-    , confirmPassword = requiredString
+    , phoneNumber =
+        Valid.validator
+            (\str ->
+                let
+                    validate =
+                        PhoneNumber.validate { defaultCountry = Countries.countryUS, otherCountries = [], types = PhoneNumber.anyType }
+                in
+                case validate str of
+                    Just number ->
+                        Ok number
+
+                    Nothing ->
+                        Err "Must be a valid phone number"
+            )
+    , password =
+        \confirmPassword ->
+            requiredString
+                |> Valid.andThenValidator
+                    (\password ->
+                        if password == confirmPassword then
+                            Ok password
+
+                        else
+                            Err "Passwords must match"
+                    )
     }
 
 
-type alias Error =
-    ()
-
-
-validate : UnvalidatedForm -> Result ( Error, List Error ) (Valid Form)
-validate unvalidatedForm =
-    Debug.todo ""
-
-
-
--- VIEW
+validateForm : Model -> Result String (Valid Form)
+validateForm (Model model) =
+    let
+        validators =
+            mkValidators (Model model)
+    in
+    Valid.map Form (validators.firstName model.unvalidatedForm.firstName)
+        |> Valid.apply (validators.lastName model.unvalidatedForm.lastName)
+        |> Valid.apply (validators.email model.unvalidatedForm.email)
+        |> Valid.apply (validators.birthday model.unvalidatedForm.birthday)
+        |> Valid.apply (validators.phoneNumber model.unvalidatedForm.phoneNumber)
+        |> Valid.apply (validators.username model.unvalidatedForm.username)
+        |> Valid.apply (validators.password model.unvalidatedForm.confirmPassword model.unvalidatedForm.password)
 
 
 view : Model -> { title : String, body : List (Html Msg) }
@@ -179,7 +218,8 @@ view (Model model) =
 
         showValidation : Bool
         showValidation =
-            model.dirty && model.hasSubmitted
+            -- model.dirty &&
+            model.hasSubmitted
 
         maskValidator : a -> Maybe a
         maskValidator =
@@ -260,10 +300,9 @@ view (Model model) =
                     , validator = maskValidator << validators.phoneNumber
                     }
                 , inputText
-                    { value =
-                        model.unvalidatedForm.birthday |> Maybe.map Date.toIsoString |> Maybe.withDefault ""
+                    { value = model.unvalidatedForm.birthday
                     , type_ = "date"
-                    , onInput = Date.fromIsoString >> Result.toMaybe >> EnteredBirthday
+                    , onInput = EnteredBirthday
                     , description = Nothing
                     , id = "birthday"
                     , label = Html.text "Date of birth"
@@ -273,12 +312,52 @@ view (Model model) =
                         ]
                     , validator = maskValidator << validators.birthday
                     }
-                , Html.button
-                    []
-                    [ Html.text "Submit" ]
-                , Html.div []
-                    [ Html.pre [] [ Html.text encodedFlags ]
+                , inputText
+                    { value = model.unvalidatedForm.username
+                    , type_ = "text"
+                    , onInput = EnteredUsername
+                    , description = Just "Must be at least 6 characters long"
+                    , id = "username"
+                    , label = Html.text "Username"
+                    , required = Just True
+                    , inputAttributes = []
+                    , validator = maskValidator << validators.username
+                    }
+                , inputText
+                    { value = model.unvalidatedForm.password
+                    , type_ = "password"
+                    , onInput = EnteredPassword
+                    , description = Nothing
+                    , id = "password"
+                    , label = Html.text "Password"
+                    , required = Just True
+                    , inputAttributes = []
+                    , validator = maskValidator << validators.password model.unvalidatedForm.confirmPassword
+                    }
+                , inputText
+                    { value = model.unvalidatedForm.confirmPassword
+                    , type_ = "password"
+                    , onInput = EnteredConfirmPassword
+                    , description = Nothing
+                    , id = "password"
+                    , label = Html.text "Confirm password"
+                    , required = Just True
+                    , inputAttributes = []
+                    , validator = maskValidator << validators.password model.unvalidatedForm.password
+                    }
+                , Html.div [ Attributes.class "mt-4" ]
+                    [ Html.button
+                        [ Attributes.type_ "submit"
+                        , Attributes.class "bg-blue-800 text-white px-4 py-2 rounded-md focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 transition-[--tw-ring-offset-width] duration-200"
+                        ]
+                        [ Html.text "Submit" ]
                     ]
+                ]
+            , Html.div []
+                [ Html.pre [] [ Html.text encodedFlags ]
+                ]
+            , Html.div []
+                [ Html.pre [] [ Html.text (Debug.toString (validateForm (Model model))) ]
                 ]
             ]
         ]
@@ -291,7 +370,7 @@ inputText :
     , onInput : String -> msg
     , description : Maybe String
     , id : String
-    , label : Html msg
+    , label : Html Never
     , required : Maybe Bool
     , inputAttributes : List (Attribute msg)
     , validator : String -> Maybe (Result String validated)
@@ -319,6 +398,12 @@ inputText args =
 
                         Nothing ->
                             let
+                                -- To avoid layout shift when showing/hiding the
+                                -- hint we want to always render something, so
+                                -- even when there is no hint error or
+                                -- description we render a zero-width space (the
+                                -- empty string "" won't work here since it
+                                -- doesn't take up any height).
                                 zeroWidthSpace : String
                                 zeroWidthSpace =
                                     "\u{200B}"
@@ -333,7 +418,7 @@ inputText args =
         [ Html.labelBefore []
             (Html.div
                 []
-                (Html.text "First name"
+                (args.label
                     :: (if explicitlyRequired then
                             [ Html.span [ Aria.hidden True ] [ Html.text "*" ] ]
 
@@ -343,7 +428,8 @@ inputText args =
                 )
             )
             (Html.inputText args.value
-                ([ Aria.invalid isInvalid
+                ([ Attributes.type_ args.type_
+                 , Aria.invalid isInvalid
                  , Aria.describedBy (Maybe.toList maybeHintId)
                  , Events.onInput args.onInput
                  , Attributes.class "rounded-md focus:ring-2 focus:ring-offset-1 focus:ring-blue-400 transition-[--tw-ring-offset-width] duration-200"
@@ -370,7 +456,7 @@ type Msg
     | EnteredFirstName String
     | EnteredLastName String
     | EnteredEmail String
-    | EnteredBirthday (Maybe Date)
+    | EnteredBirthday String
     | EnteredPhoneNumber String
     | EnteredUsername String
     | EnteredPassword String
