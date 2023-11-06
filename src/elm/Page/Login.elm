@@ -4,7 +4,7 @@ module Page.Login exposing
     , view
     )
 
-import Accessibility as Html exposing (Html)
+import Accessibility as Html
 import Browser exposing (Document)
 import Flags exposing (Flags)
 

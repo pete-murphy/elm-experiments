@@ -58,7 +58,7 @@ type alias Form =
     , lastName : String
     , email : Email
     , birthday : Date
-    , phoneNumber : PhoneNumber
+    , phoneNumber : Maybe PhoneNumber
     , username : String
     , password : String
     }
@@ -117,7 +117,7 @@ type alias FormValidators =
     , lastName : Validator String
     , email : Validator Email
     , birthday : Validator Date
-    , phoneNumber : Validator PhoneNumber
+    , phoneNumber : Validator (Maybe PhoneNumber)
     , username : Validator String
     , password : String -> Validator String
     }
@@ -169,16 +169,20 @@ mkValidators (Model model) =
     , phoneNumber =
         Valid.validator
             (\str ->
-                let
-                    validate =
-                        PhoneNumber.validate { defaultCountry = Countries.countryUS, otherCountries = [], types = PhoneNumber.anyType }
-                in
-                case validate str of
-                    Just number ->
-                        Ok number
+                if str == "" then
+                    Ok Nothing
 
-                    Nothing ->
-                        Err "Must be a valid phone number"
+                else
+                    let
+                        validate =
+                            PhoneNumber.validate { defaultCountry = Countries.countryUS, otherCountries = [], types = PhoneNumber.anyType }
+                    in
+                    case validate str of
+                        Just number ->
+                            Ok (Just number)
+
+                        Nothing ->
+                            Err "Must be a valid phone number"
             )
     , password =
         \confirmPassword ->
@@ -254,7 +258,7 @@ view (Model model) =
                     , description = Nothing
                     , id = "first-name"
                     , label = Html.text "First name"
-                    , required = Just True
+                    , required = Nothing
                     , inputAttributes =
                         [ Attributes.attribute "autocomplete" "given-name"
                         ]
@@ -267,7 +271,7 @@ view (Model model) =
                     , description = Nothing
                     , id = "last-name"
                     , label = Html.text "Last name"
-                    , required = Just True
+                    , required = Nothing
                     , inputAttributes =
                         [ Attributes.attribute "autocomplete" "family-name"
                         ]
@@ -280,7 +284,7 @@ view (Model model) =
                     , description = Nothing
                     , id = "email"
                     , label = Html.text "E-mail"
-                    , required = Just True
+                    , required = Nothing
                     , inputAttributes =
                         [ Attributes.attribute "autocomplete" "email"
                         ]
@@ -293,7 +297,7 @@ view (Model model) =
                     , description = Nothing
                     , id = "phone-number"
                     , label = Html.text "Phone number"
-                    , required = Nothing
+                    , required = Just False
                     , inputAttributes =
                         [ Attributes.attribute "autocomplete" "tel"
                         ]
@@ -306,7 +310,7 @@ view (Model model) =
                     , description = Nothing
                     , id = "birthday"
                     , label = Html.text "Date of birth"
-                    , required = Just True
+                    , required = Nothing
                     , inputAttributes =
                         [ Attributes.attribute "autocomplete" "bday"
                         ]
@@ -319,7 +323,7 @@ view (Model model) =
                     , description = Just "Must be at least 6 characters long"
                     , id = "username"
                     , label = Html.text "Username"
-                    , required = Just True
+                    , required = Nothing
                     , inputAttributes = []
                     , validator = maskValidator << validators.username
                     }
@@ -330,7 +334,7 @@ view (Model model) =
                     , description = Nothing
                     , id = "password"
                     , label = Html.text "Password"
-                    , required = Just True
+                    , required = Nothing
                     , inputAttributes = []
                     , validator = maskValidator << validators.password model.unvalidatedForm.confirmPassword
                     }
@@ -341,7 +345,7 @@ view (Model model) =
                     , description = Nothing
                     , id = "password"
                     , label = Html.text "Confirm password"
-                    , required = Just True
+                    , required = Nothing
                     , inputAttributes = []
                     , validator = maskValidator << validators.password model.unvalidatedForm.password
                     }
@@ -413,6 +417,10 @@ inputText args =
         explicitlyRequired : Bool
         explicitlyRequired =
             args.required == Just True
+
+        explicitlyOptional : Bool
+        explicitlyOptional =
+            args.required == Just False
     in
     Html.div [ Attributes.class "flex flex-col w-fit gap-1" ]
         [ Html.labelBefore []
@@ -421,6 +429,9 @@ inputText args =
                 (args.label
                     :: (if explicitlyRequired then
                             [ Html.span [ Aria.hidden True ] [ Html.text "*" ] ]
+
+                        else if explicitlyOptional then
+                            [ Html.span [ Attributes.class "text-neutral-400 italic text-sm" ] [ Html.text " (optional)" ] ]
 
                         else
                             []
